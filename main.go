@@ -1,8 +1,10 @@
+// +build windows
+
 package main
 
 import (
 	"fmt"
-	zwindows "github.com/cloudfoundry/gosigar/sys/windows"
+	win "github.com/cloudfoundry/gosigar/sys/windows"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc/mgr"
 	"strings"
@@ -11,11 +13,10 @@ import (
 )
 
 var (
-	advapi32 = windows.NewLazySystemDLL("advapi32.dll")
-
-	duplicate_token  = advapi32.NewProc("DuplicateTokenEx")
-	impersonate_user = advapi32.NewProc("ImpersonateLoggedOnUser")
-	create_process   = advapi32.NewProc("CreateProcessWithTokenW")
+	Advapi32        = windows.NewLazySystemDLL("advapi32.dll")
+	DuplicateToken  = Advapi32.NewProc("DuplicateTokenEx")
+	ImpersonateUser = Advapi32.NewProc("ImpersonateLoggedOnUser")
+	CreateProcess   = Advapi32.NewProc("CreateProcessWithTokenW")
 )
 
 func CreateProcessWithTokenW(
@@ -31,7 +32,7 @@ func CreateProcessWithTokenW(
 ) error {
 
 	rc, _, ec := syscall.Syscall9(
-		create_process.Addr(),
+		CreateProcess.Addr(),
 		9,
 		uintptr(token),
 		uintptr(logon),
@@ -50,7 +51,7 @@ func CreateProcessWithTokenW(
 }
 
 func ImpersonateLoggedOnUser(token windows.Token) error {
-	rc, _, ec := syscall.Syscall(impersonate_user.Addr(), 1, uintptr(token), 0, 0)
+	rc, _, ec := syscall.Syscall(ImpersonateUser.Addr(), 1, uintptr(token), 0, 0)
 	if rc == 0 {
 		return error(ec)
 	}
@@ -67,7 +68,7 @@ func DuplicateTokenEx(
 ) error {
 
 	rc, _, ec := syscall.Syscall6(
-		duplicate_token.Addr(),
+		DuplicateToken.Addr(),
 		6,
 		uintptr(token),
 		uintptr(access),
@@ -199,13 +200,13 @@ func EnablePrivileges() error {
 	}
 	defer token.Close()
 
-	_, err = zwindows.GetTokenPrivileges(token)
+	_, err = win.GetTokenPrivileges(token)
 
 	if nil != err {
 		return err
 	}
 
-	err = zwindows.EnableTokenPrivileges(
+	err = win.EnableTokenPrivileges(
 		token,
 		"SeDebugPrivilege",
 		"SeImpersonatePrivilege",
@@ -236,7 +237,7 @@ func ImpersonateSystem(pid uint32) error {
 
 	var duplicate windows.Token
 	attributes := windows.SecurityAttributes{
-		SecurityDescriptor: uintptr(0),
+		SecurityDescriptor: &windows.SECURITY_DESCRIPTOR{},
 		InheritHandle:      0,
 	}
 	attributes.Length = uint32(unsafe.Sizeof(attributes))
@@ -288,7 +289,7 @@ func StartProcessAsTrustedInstaller(pid uint32) error {
 
 	var duplicate windows.Token
 	attributes := windows.SecurityAttributes{
-		SecurityDescriptor: uintptr(0),
+		SecurityDescriptor: &windows.SECURITY_DESCRIPTOR{},
 		InheritHandle:      0,
 	}
 	attributes.Length = uint32(unsafe.Sizeof(attributes))
